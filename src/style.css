@@ -54,3 +54,8 @@ footer {text-align:center;color:#60776f;font-size:10px;margin-top:26px}
 .accord-banner {margin-top:10px;padding:9px;border:1px solid #ab986b;background:#3b3428}
 .accord-banner b {display:block;font-weight:normal;color:#f9d891}
 .accord-banner small {display:block;font:10px/1.6 ui-monospace,Consolas,monospace;color:#e1d5b2}
+
+/* The optional civic charter is a visible post-accord objective. */
+.charter-banner {margin-top:9px;padding:9px;border:1px solid #83a3a3;background:#223b40}
+.charter-banner b {display:block;color:#f3ddaa;font-weight:normal}
+.charter-banner small {display:block;font:10px/1.6 ui-monospace,Consolas,monospace;color:#bed3cb}

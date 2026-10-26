@@ -73,6 +73,12 @@ npm run smoke-view
 
 `civic.test.js` additionally does controlled direct rescue-state injection to isolate the exact consequences of each first-returned member, validates shrine depletion and combat charges, and checks map reciprocity over multiple seeds. `smoke-view` renders the town with a canvas stub, checks the journal and loads a genuine partially played run into the UI.
 
+## The accord becomes a playable obligation (v0.3)
+
+The six founding accords now create six different **council charter** quests. The charter location is chosen with the seed in the final sector, independently of rescue order. A character must first clear the charter chamber, retrieve the stone, return to the council, and ratify the charter. The completed charter then adds a reciprocal intra-sector door when a door is missing. When that sector already has all four internal edges, three obstacles are cleared instead. Both changes preserve the original ferry and masonry gates.
+
+The first completed project determines the ratification reward: Waterside grants two max HP, Memory grants four focused sword strikes, and Orchard grants three wards. The second guild joins the council patrol after ratification; a completed charter is recorded in the ending and grants 150 points. Charter collection and ratification are optional, and game progress never requires the charter. These rules are audited in `docs/COUNCIL_CHARTERS.md` and exercised by the 24-history charter matrix.
+
 ## Design next
 
 The current generator creates a civic building instantly when a pair resolves. A later version can stage this over several town visits, letting players choose between competing projects using resources or story decisions. A secondary rival restoration agent could choose which souls to free, creating contested causal histories. Either addition would need solvability certificates and one-seed counterfactual tests before inclusion.

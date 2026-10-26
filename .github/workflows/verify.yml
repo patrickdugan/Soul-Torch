@@ -16,3 +16,4 @@ jobs:
       - run: npm run branch-matrix -- 2
       - run: npm run smoke-view
       - run: npm run history-matrix -- 1
+      - run: npm run charter-matrix -- 2

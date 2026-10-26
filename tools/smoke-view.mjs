@@ -42,7 +42,7 @@ for (let i=0; i<10000 && game.branches.length===0 && game.status==='playing'; i+
 }
 assert.equal(game.branches.length,1);
 assert.equal(game.branches[0].name,'Reed Sanctuary');
-storage.set('soul-torch-v2',serialize(game));
+storage.set('soul-torch-v3',serialize(game));
 elements.get('load').listeners.click();
 assert.ok(elements.get('branches').innerHTML.includes('Reed Sanctuary'));
 assert.ok(elements.get('chronicle').innerHTML.includes('restored'));
@@ -57,10 +57,12 @@ for (let i=0; i<10000 && !game.accord && game.status==='playing'; i++) {
   game = dispatch(game,botAction(game,priority));
 }
 assert.ok(game.accord);
-storage.set('soul-torch-v2',serialize(game));
+storage.set('soul-torch-v3',serialize(game));
 elements.get('load').listeners.click();
 assert.ok(elements.get('branches').innerHTML.includes('FOUNDING ACCORD'));
 assert.ok(elements.get('chronicle').innerHTML.includes(game.accord.name));
+assert.ok(elements.get('branches').innerHTML.includes(game.charter.name));
+assert.ok(elements.get('branches').innerHTML.includes(`chamber ${game.charter.room+1}`));
 keyListeners.keydown(event('t'));
 queuedFrame();
 console.log(JSON.stringify({rendered:true,branch:game.branches[0].name,accord:game.accord.name,

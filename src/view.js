@@ -1,5 +1,5 @@
 import { newGame, dispatch, serialize, deserialize, isBlocked,
-  activeCivicSites, townNpcs, epilogue, WIDTH, HEIGHT } from './core.js';
+  activeCivicSites, activeCharterSite, townNpcs, epilogue, WIDTH, HEIGHT } from './core.js';
 import { CIVIC_PROJECTS, CIVIC_LOTS, TOWN_HOMES } from './civic.js';
 
 const el = id => document.getElementById(id);
@@ -60,7 +60,8 @@ function drawDoor(room, door, palette) {
   if (door.needs && !game.rescued.includes(door.needs)) {
     text(x * SIZE + 16, y * SIZE + 22, '◆', '#fbd392', 17, 'center');
   } else if (door.origin) {
-    const color = door.origin === 'canal' ? '#8fd1dd' : '#f0bd7c';
+    const color = door.origin === 'canal' ? '#8fd1dd' :
+      door.origin === 'charter' ? '#f7deaa' : '#f0bd7c';
     text(x * SIZE + 16, y * SIZE + 22, '✦', color, 17, 'center');
   }
 }
@@ -93,6 +94,18 @@ function drawCivicSite(site) {
   if (!site.used && Math.floor(frames / 20) % 2 === 0) {
     rect(px + 1, py + 14, 3, 4, palette[1]);
     rect(px + 28, py + 14, 3, 4, palette[1]);
+  }
+}
+function drawCharterStone(site) {
+  const px = site.x * SIZE, py = site.y * SIZE;
+  rect(px + 4, py + 5, 24, 24, '#1c353d');
+  rect(px + 7, py + 7, 18, 18, '#c2b58d');
+  rect(px + 10, py + 11, 12, 3, '#564f5b');
+  rect(px + 10, py + 17, 9, 3, '#564f5b');
+  text(px + 16, py + 4, '✧', '#f5dfab', 15, 'center');
+  if (Math.floor(frames / 16) % 2 === 0) {
+    rect(px + 1, py + 13, 3, 3, '#ffe8aa');
+    rect(px + 28, py + 19, 3, 3, '#ffe8aa');
   }
 }
 function drawCivicLot(branch) {
@@ -163,6 +176,8 @@ function drawDungeon() {
   }
   for (const door of room.doors) drawDoor(room, door, palette);
   for (const site of activeCivicSites(game, room.id)) drawCivicSite(site);
+  const charter = activeCharterSite(game, room.id);
+  if (charter) drawCharterStone(charter);
   drawLair(room, game.roomStates[room.id], palette);
   for (const enemy of game.roomStates[room.id].enemies) drawEnemy(enemy);
   drawHero(game.hero.x, game.hero.y, game.hero.face);
@@ -203,7 +218,9 @@ function drawTown() {
     rect(10 * SIZE - 35, 6 * SIZE - 11, 71, 55, tint);
     rect(10 * SIZE - 30, 6 * SIZE - 4, 61, 40, '#355553');
     text(10 * SIZE, 6 * SIZE + 17, '✣', tint, 25, 'center');
-    text(10 * SIZE, 6 * SIZE + 31, 'COUNCIL', '#ffedd2', 9, 'center');
+    text(10 * SIZE, 6 * SIZE + 31, game.accord.ratified ? 'RATIFIED' : 'COUNCIL',
+      '#ffedd2', 9, 'center');
+    if (game.accord.ratified) text(10 * SIZE, 6 * SIZE - 17, '✧', '#f8e4ad', 18, 'center');
   }
   for (let i = 0; i < TOWN_HOMES.length; i++) {
     const [x, y] = TOWN_HOMES[i],
@@ -259,6 +276,9 @@ function minimap() {
     if (room.soulId && game.rescued.includes(room.soulId)) {
       mc.fillStyle = '#d2f7ab'; mc.fillRect(x + 23, y + 3, 6, 6);
     }
+    if (game.charter?.stage === 'seeking' && game.charter.room === room.id) {
+      mc.fillStyle = '#f3d891'; mc.fillRect(x + 3, y + 3, 7, 7);
+    }
   }
 }
 function updatePanel() {
@@ -289,12 +309,22 @@ function updatePanel() {
     }).join('') : '') + (game.accord ?
     `<div class="accord-banner"><b>FOUNDING ACCORD · ${game.accord.name}</b>` +
     `<small>${game.accord.firstProject} → ${game.accord.secondProject}</small>` +
-    `<small>${game.accord.gift} · Council activity established</small></div>` : '');
-  el('chronicle').innerHTML = game.events.filter(e => ['restoration','branch','site','passage','accord'].includes(e.type))
+    `<small>${game.accord.gift} · Council activity established</small></div>` : '') +
+    (game.charter ? `<div class="charter-banner"><b>✧ ${game.charter.name}</b>` +
+      `<small>${game.charter.stage === 'seeking' ? `Find the lost charter in chamber ${game.charter.room + 1}. Defeat the shadows to recover it.` :
+        game.charter.stage === 'carried' ? 'Charter recovered. Bring it to the village council (T, then E).' :
+        `RATIFIED · ${game.accord.legacy}`}</small>` +
+      (game.charter.infrastructure ? `<small>${game.charter.infrastructure.kind === 'passage' ?
+        `Restored passage: chambers ${game.charter.infrastructure.between[0] + 1} and ${game.charter.infrastructure.between[1] + 1}.` :
+        `Ruin cleared: chamber ${game.charter.infrastructure.room + 1}.`}</small>` : '') + '</div>' : '');
+  el('chronicle').innerHTML = game.events.filter(e =>
+    ['restoration','branch','site','passage','accord','charter','ratification'].includes(e.type))
     .slice(-8).reverse().map(e => {
       if (e.type === 'restoration') return `<p>✧ ${e.name} restored ${e.site}.</p>`;
       if (e.type === 'branch') return `<p>◈ ${e.name} emerged through rescue order.</p>`;
       if (e.type === 'accord') return `<p>✣ ${e.name}: ${e.gift}.</p>`;
+      if (e.type === 'charter') return `<p>✧ ${e.stage === 'carried' ? 'Recovered' : 'Revealed'}: ${e.name}.</p>`;
+      if (e.type === 'ratification') return `<p>✣ ${e.name} ratified. ${e.legacy}</p>`;
       if (e.type === 'passage') return `<p>↔ New passage: chambers ${e.between[0]+1} and ${e.between[1]+1}.</p>`;
       return `<p>✦ ${e.kind} shrine awakened.</p>`;
     }).join('') || '<p>Every released soul writes a new chapter.</p>';
@@ -325,7 +355,8 @@ function draw() {
     text(320, 179, game.status === 'won' ? (ending?.title || 'THE WORLD RETURNS').toUpperCase() :
       'THE TORCH IS DARK', '#fae0a2', ending ? 15 : 21, 'center');
     text(320, 213, game.status === 'won' ? `SCORE ${game.finalScore} · ${game.turns} TURNS` : 'YOUR STORY ENDS HERE', '#cce2c5', 13, 'center');
-    text(320, 244, game.status === 'won' ? `FOUNDING ACCORD: ${ending?.accord || 'THE RETURNED'}` :
+    text(320, 244, game.status === 'won' ?
+      `FOUNDING ACCORD: ${ending?.accord || 'THE RETURNED'}${ending?.charter ? ' · RATIFIED' : ''}` :
       'ENTER A NEW SEED AND IGNITE AGAIN', '#98bdac', 11, 'center');
   }
   requestAnimationFrame(draw);
@@ -354,12 +385,12 @@ function ignite() {
 el('new-game').addEventListener('click', ignite);
 el('seed').addEventListener('keydown', event => { if (event.key === 'Enter') ignite(); });
 el('save').addEventListener('click', () => {
-  try { localStorage.setItem('soul-torch-v2', serialize(game));showTemporary('RUN SAVED IN THIS BROWSER'); }
+  try { localStorage.setItem('soul-torch-v3', serialize(game));showTemporary('RUN SAVED IN THIS BROWSER'); }
   catch { showTemporary('BROWSER STORAGE UNAVAILABLE'); }
 });
 el('load').addEventListener('click', () => {
   try {
-    const data = localStorage.getItem('soul-torch-v2');
+    const data = localStorage.getItem('soul-torch-v3') || localStorage.getItem('soul-torch-v2');
     if (!data) { showTemporary('NO SAVED RUN FOUND');return; }
     game = deserialize(data);el('seed').value = game.seed;updatePanel();showTemporary('RUN RESTORED');
   } catch { showTemporary('COULD NOT RESTORE SAVE'); }

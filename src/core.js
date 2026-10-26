@@ -2,7 +2,7 @@
 import { CIVIC_PROJECTS, CIVIC_ACCORDS, CIVIC_LOTS, TOWN_HOMES, civicProject } from './civic.js';
 export const WIDTH = 20;
 export const HEIGHT = 13;
-export const VERSION = 2;
+export const VERSION = 3;
 
 const ROLES = [
   { id: 'ferryman', title: 'Ferryman', site: 'River Landing', line: 'The river remembers every crossing.', freed: 'The ferryman returns. A passage opens beyond the lowlands.' },
@@ -157,8 +157,24 @@ export function generateWorld(seed = '104729') {
     const [x, y] = tile;
     return [project.key, { room: roomId, x, y }];
   }));
+  // The council charter is always discovered deep in the crypt. Its location is
+  // fixed before rescue choices, so opposite histories remain comparable.
+  const charterCandidates = rooms.filter(room => room.sector === 2 && !room.boss);
+  const charterRoom = choice(random, charterCandidates);
+  const occupied = new Set(charterRoom.enemies.map(enemy => xyKey(enemy.x, enemy.y)));
+  for (const site of Object.values(civicSites)) if (site.room === charterRoom.id)
+    occupied.add(xyKey(site.x, site.y));
+  const tiles = shuffle(random, [[5, 3], [15, 3], [5, 9], [15, 9],
+    [6, 10], [14, 10], [10, 10], [10, 2]]);
+  const floor = reachableTiles(charterRoom);
+  const free = ([x, y]) => floor.has(xyKey(x, y)) && !occupied.has(xyKey(x, y)) &&
+    Math.abs(x - 10) + Math.abs(y - 4) > 3 &&
+    Math.abs(x - 10) + Math.abs(y - 8) > 2;
+  const pos = tiles.find(free) || [...floor].map(key => key.split(',').map(Number)).find(free);
+  if (!pos) throw new Error('No charter site in the crypt');
+  const charterSite = { room: charterRoom.id, x: pos[0], y: pos[1] };
   return { version: VERSION, seed: String(seed), rooms, souls, civicSites,
-    settlement: 'Drowned Village' };
+    charterSite, settlement: 'Drowned Village' };
 }
 export function getSoul(world, id) { return world.souls.find(s => s.id === id); }
 export function hasDoor(room, dir) { return room.doors.find(d => d.dir === dir); }
@@ -219,6 +235,15 @@ export function analyzeWorld(world) {
       problems.push(`Invalid civic site ${project.key}`);
     }
   }
+  const charter = world.charterSite;
+  if (!charter || world.rooms[charter.room]?.sector !== 2 ||
+    world.rooms[charter.room]?.boss ||
+    !reachableTiles(world.rooms[charter.room]).has(xyKey(charter.x, charter.y)) ||
+    world.rooms[charter.room]?.enemies.some(e => e.x === charter.x && e.y === charter.y) ||
+    Object.values(world.civicSites).some(site => site.room === charter.room &&
+      site.x === charter.x && site.y === charter.y)) {
+    problems.push('Invalid charter site');
+  }
   const unlocked = new Set(), visited = new Set();
   let changed = true;
   while (changed) {
@@ -254,7 +279,8 @@ export function newGame(seed = '104729') {
     roomStates: world.rooms.map(room => ({ enemies: structuredClone(room.enemies), settled: false })),
     hero: { room: 0, x: 10, y: 8, face: 'up', hp: 8, maxHp: 8, power: 1, focus: 0, ward: 0 },
     home: { x: 10, y: 6 }, mode: 'dungeon',
-    rescued: [], visited: [0], branches: [], accord: null, usedSites: [], townTicks: 0,
+    rescued: [], visited: [0], branches: [], accord: null, charter: null,
+    usedSites: [], townTicks: 0,
     turns: 0, kills: 0, rests: 0, history: [],
     events: [], log: ['The village waits in silence. Enter the dungeon.'],
     status: 'playing', finalScore: null,
@@ -310,6 +336,10 @@ function establishAccord(game) {
     dialogue: spec.dialogue, from: first.key, to: second.key,
     firstProject: first.name, secondProject: second.name };
   game.accord = accord;
+  game.charter = { ...structuredClone(game.world.charterSite), name: spec.charter,
+    oath: spec.oath, stage: 'seeking', infrastructure: null };
+  game.events.push({type: 'charter', stage: 'seeking', turn: game.turns,
+    order, name: spec.charter, room: game.charter.room });
   // The earliest completed project decides how the new civic center helps.
   if (first.key === 'waterside') { game.hero.maxHp++; game.hero.hp++; accord.gift = '+1 vitality'; }
   if (first.key === 'memory') { game.hero.focus += 2; accord.gift = '+2 focused strikes'; }
@@ -329,6 +359,53 @@ function clearTerrain(room, count, prefer) {
   room.obstacles = initial.filter(k => !selected.includes(k));
   return selected;
 }
+/** Ratification creates a durable route, or a cleared ruin when the seed
+ * already contains every local door. Both transformations are monotone. */
+function ratifyCharter(game) {
+  const charter = game.charter, accord = game.accord;
+  if (!accord || !charter || charter.stage !== 'carried') return;
+  charter.stage = 'ratified';
+  const sector = accord.from === 'waterside' ? 1 : 2;
+  const k = sector * 4;
+  const boundaries = [[k,k+1], [k,k+2], [k+1,k+3], [k+2,k+3]];
+  const offset = normalizeSeed(`${game.seed}:${accord.order}`) % boundaries.length;
+  const ordered = [...boundaries.slice(offset), ...boundaries.slice(0,offset)];
+  const open = ordered.find(([a,b]) => !game.world.rooms[a].doors.some(d => d.to === b));
+  if (open) {
+    const [a,b] = open;
+    link(game.world.rooms, a, b, null, 'charter');
+    game.world.rooms[a].doors.sort((x,y)=>x.to-y.to);
+    game.world.rooms[b].doors.sort((x,y)=>x.to-y.to);
+    charter.infrastructure = { kind: 'passage', between: [a,b] };
+  } else {
+    const room = game.world.rooms[k + (normalizeSeed(accord.order) % 4)];
+    charter.infrastructure = { kind: 'terrain', room: room.id,
+      cleared: clearTerrain(room, 3, (x,y)=> accord.from === 'waterside' ? x < 10 : y < 7) };
+  }
+  const hero = game.hero;
+  if (accord.from === 'waterside') {
+    hero.maxHp += 2; hero.hp += 2;
+    accord.legacy = 'The waterways grant two permanent vitality.';
+  } else if (accord.from === 'memory') {
+    hero.focus += 4;
+    accord.legacy = 'The archive grants four empowered sword strikes.';
+  } else {
+    hero.ward += 3;
+    accord.legacy = 'The living bells ward against three blows.';
+  }
+  accord.ratified = true;
+  game.events.push({type: 'ratification', turn: game.turns, name: charter.name,
+    order: accord.order, legacy: accord.legacy,
+    infrastructure: structuredClone(charter.infrastructure) });
+  message(game, `${charter.name} ratified. ${accord.legacy}`);
+}
+
+export function activeCharterSite(game, roomId) {
+  if (!game.charter || game.charter.stage !== 'seeking' ||
+    game.charter.room !== roomId) return null;
+  return { ...game.charter };
+}
+
 function openParallelCrossing(game, project, branch) {
   const [a, b] = project.key === 'waterside' ? [2, 4] : [6, 8];
   const other = game.world.rooms[a].doors.some(d => d.to === b) ? 1 : 0;
@@ -414,7 +491,8 @@ export function townNpcs(game) {
     const home = TOWN_HOMES[i];
     const project = CIVIC_PROJECTS.find(p => p.a === soul.id || p.b === soul.id);
     const branch = game.branches.find(b => b.key === project.key);
-    const townCouncil = branch && game.accord?.from === project.key;
+    const townCouncil = branch && (game.accord?.from === project.key ||
+      (game.accord?.ratified && game.accord.to === project.key));
     const [px, py] = townCouncil ? [10, 6] : branch ? CIVIC_LOTS[project.key] : home;
     const goal = branch ? [px + (project.a === soul.id ? -1 : 1), py] :
       [Math.max(1, Math.min(WIDTH - 2, home[0] + 1)), home[1] + 1];
@@ -429,6 +507,8 @@ export function townDialogue(game, soulId) {
   const project = CIVIC_PROJECTS.find(p => p.a === soulId || p.b === soulId);
   const branch = game.branches.find(b => b.key === project.key);
   if (!branch) return soul.line;
+  if (game.accord?.ratified && game.accord.to === project.key && game.townTicks % 5 === 4)
+    return `${game.charter.name}: ${game.charter.oath}`;
   if (game.accord && (game.accord.from === project.key || game.accord.to === project.key) &&
     game.townTicks % 4 === 3) return `${game.accord.name}: ${game.accord.dialogue}`;
   const partner = getSoul(game.world, project.a === soulId ? project.b : project.a);
@@ -447,7 +527,8 @@ export function epilogue(game) {
   return { title: `The ${water} of ${stone} and ${tree}`,
     chapters: game.accord ? [...chapters, game.accord.dialogue] : chapters,
     key, accord: game.accord?.name || null,
-    historyKey: `${key}/${game.accord?.order || 'none'}` };
+    historyKey: `${key}/${game.accord?.order || 'none'}`,
+    charter: game.charter?.stage === 'ratified' ? game.charter.name : null };
 }
 /** Validates the dynamic graph and the consistency of civic projects after an arbitrary rescue sequence. */
 export function analyzeGame(game) {
@@ -474,6 +555,30 @@ export function analyzeGame(game) {
     if (game.accord?.order !== order || game.accord.name !== CIVIC_ACCORDS[order]?.name)
       problems.push(`Invalid founding accord ${order}`);
   } else if (game.accord) problems.push('Premature founding accord');
+  if (game.accord) {
+    if (!game.charter || game.charter.name !== CIVIC_ACCORDS[game.accord.order]?.charter ||
+      JSON.stringify([game.charter.room,game.charter.x,game.charter.y]) !==
+        JSON.stringify([game.world.charterSite.room,game.world.charterSite.x,
+          game.world.charterSite.y]) ||
+      !['seeking','carried','ratified'].includes(game.charter.stage) ||
+      Boolean(game.accord.ratified) !== (game.charter.stage === 'ratified'))
+      problems.push('Invalid council charter');
+    if (game.charter?.stage === 'ratified') {
+      if (game.events.filter(e=>e.type==='ratification').length !== 1 ||
+        !game.charter.infrastructure) problems.push('Missing charter ratification evidence');
+      if (game.charter.infrastructure?.kind === 'passage') {
+        const [a,b] = game.charter.infrastructure.between;
+        if (!game.world.rooms[a]?.doors.some(d=>d.to===b && d.origin==='charter') ||
+            !game.world.rooms[b]?.doors.some(d=>d.to===a && d.origin==='charter'))
+          problems.push('Charter passage not reciprocal');
+      } else if (game.charter.infrastructure?.kind === 'terrain') {
+        const detail = game.charter.infrastructure;
+        if (!detail.cleared?.length || detail.cleared.some(k=>
+          game.world.rooms[detail.room]?.obstacles.includes(k)))
+          problems.push('Charter terrain not cleared');
+      } else problems.push('Unknown charter infrastructure');
+    }
+  } else if (game.charter) problems.push('Premature charter');
   if (new Set(game.usedSites).size !== game.usedSites.length)
     problems.push('A civic shrine was consumed more than once');
   for (const key of game.usedSites) if (!branches.has(key)) problems.push(`Unrestored site used: ${key}`);
@@ -571,7 +676,9 @@ function interact(game) {
         Math.abs(game.home.y - CIVIC_LOTS[b.key][1]) }))
       .filter(x => x.distance <= 1).sort((a, b) => a.distance - b.distance)[0];
     const councilNear = game.accord && Math.abs(game.home.x - 10) + Math.abs(game.home.y - 6) <= 1;
-    if (councilNear && (!actors.length || actors[0].distance >= 1)) {
+    if (councilNear && game.charter?.stage === 'carried') {
+      ratifyCharter(game);
+    } else if (councilNear && (!actors.length || actors[0].distance >= 1)) {
       message(game, `${game.accord.name}: ${game.accord.dialogue} (${game.accord.gift})`);
     } else if (nearestProject && (!actors.length || nearestProject.distance < actors[0].distance)) {
       message(game, `${nearestProject.branch.name}. ${nearestProject.branch.effect}`);
@@ -587,6 +694,18 @@ function interact(game) {
     return;
   }
   const hero = game.hero, room = game.world.rooms[hero.room], current = game.roomStates[hero.room];
+  const charter = activeCharterSite(game, hero.room);
+  if (charter && Math.abs(hero.x - charter.x) + Math.abs(hero.y - charter.y) <= 1) {
+    if (current.enemies.length) {
+      message(game, 'The charter is bound by the remaining shadows.');
+    } else {
+      game.charter.stage = 'carried';
+      game.events.push({type:'charter', stage:'carried', turn:game.turns,
+        name: charter.name, room: charter.room });
+      message(game, `${charter.name} recovered. Return it to the village council.`);
+    }
+    return;
+  }
   const site = activeCivicSites(game, hero.room).find(s =>
     Math.abs(hero.x - s.x) + Math.abs(hero.y - s.y) <= 1);
   if (site) { activateCivicSite(game, site); return; }
@@ -602,7 +721,8 @@ function interact(game) {
   if (game.rescued.length === 6 && game.roomStates.some((s, i) => game.world.rooms[i].boss &&
     !s.enemies.some(e => e.kind === 'warden'))) {
     game.status = 'won';
-    game.finalScore = Math.max(0, 1500 - game.turns - 40 * game.rests);
+    game.finalScore = Math.max(0, 1500 - game.turns - 40 * game.rests +
+      (game.charter?.stage === 'ratified' ? 150 : 0));
     const ending = epilogue(game);
     game.epilogue = ending;
     game.events.push({ type: 'victory', turn: game.turns, score: game.finalScore,
@@ -650,7 +770,9 @@ export function serialize(game) {
 }
 export function deserialize(json) {
   const saved = JSON.parse(json);
-  if (saved.version !== VERSION || typeof saved.seed !== 'string' ||
+  // v2 action histories can be replayed into v3 because the new charter is
+  // optional and the original dungeon topology is generated unchanged.
+  if (![2, VERSION].includes(saved.version) || typeof saved.seed !== 'string' ||
     !Array.isArray(saved.history) || saved.history.length > 100000) {
     throw new Error('Invalid or incompatible save');
   }
