@@ -47,7 +47,16 @@ function approach(game, predicate, enemies = []) {
   const hero = game.hero, room = game.world.rooms[hero.room];
   return pathTo(room, hero, predicate, enemies);
 }
-export function botAction(game) {
+function followDoor(game, door) {
+  const hero = game.hero;
+  const destination = door.dir === 'up' ? [10,0] : door.dir === 'down' ? [10,HEIGHT - 1] :
+    door.dir === 'left' ? [0,6] : [WIDTH - 1,6];
+  if (hero.x === destination[0] && hero.y === destination[1]) return {type:'move', direction:door.dir};
+  const path = approach(game, (x,y) => x === destination[0] && y === destination[1]);
+  return path?.length ? {type:'move',direction:path[0]} : {type:'wait'};
+}
+/** Optional priority controls which captive to free first, without bypassing simulation rules. */
+export function botAction(game, priority = null) {
   if (game.mode === 'town') return game.hero.hp < game.hero.maxHp ? {type:'rest'} : {type:'toggleTown'};
   if (game.hero.hp <= 3 && game.hero.maxHp > 3) return {type:'toggleTown'};
   const hero = game.hero, room = game.world.rooms[hero.room], state = game.roomStates[hero.room];
@@ -63,6 +72,14 @@ export function botAction(game) {
     if (path?.length) return {type:'move', direction:path[0]};
     return {type:'wait'};
   }
+  // Travel through cleared or uncleared rooms to honor a requested rescue order.
+  // Enemies are defeated en route, but a non-target lair can remain sealed.
+  const target = priority?.find(soul => !game.rescued.includes(soul) &&
+    routeRooms(game, hero.room, id => game.world.rooms[id].soulId === soul) !== null);
+  if (target && room.soulId !== target) {
+    const toTarget = routeRooms(game, hero.room, id => game.world.rooms[id].soulId === target);
+    if (toTarget?.length) return followDoor(game, toTarget[0]);
+  }
   if (!state.settled) {
     const near = Math.abs(hero.x - 10) + Math.abs(hero.y - 4) <= 2;
     if (near) return {type:'interact'};
@@ -71,22 +88,20 @@ export function botAction(game) {
   }
   const route = routeRooms(game, hero.room, id => !game.roomStates[id].settled);
   if (!route || route.length === 0) return {type:'wait'};
-  const door = route[0], destination = door.dir === 'up' ? [10,0] : door.dir === 'down' ? [10,HEIGHT - 1] :
-    door.dir === 'left' ? [0,6] : [WIDTH - 1,6];
-  if (hero.x === destination[0] && hero.y === destination[1]) return {type:'move', direction:door.dir};
-  const path = approach(game, (x,y) => x === destination[0] && y === destination[1]);
-  return path?.length ? {type:'move',direction:path[0]} : {type:'wait'};
+  return followDoor(game, route[0]);
 }
-export function playSeed(seed, limit = 15000) {
+export function playSeed(seed, limit = 15000, priority = null) {
   let game = newGame(seed);
   for (let i = 0; i < limit && game.status === 'playing'; i++) {
-    const next = botAction(game);
+    const next = botAction(game, priority);
     game = dispatch(game, next);
   }
   return { seed, status: game.status, turns: game.turns, kills: game.kills,
     rests: game.rests, rooms: game.roomStates.filter(s=>s.settled).length,
     rescued: game.rescued.length, score: game.finalScore,
-    actions: game.history.length, lastLog: game.log[0] };
+    actions: game.history.length, lastLog: game.log[0],
+    ending: game.epilogue?.key, historyKey: game.epilogue?.historyKey,
+    accord: game.accord?.order, branches: game.branches.map(b=>[b.key,b.first]) };
 }
 const invoked = process.argv[1]?.endsWith('autoplayer.mjs');
 if (invoked) {

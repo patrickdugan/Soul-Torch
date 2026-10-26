@@ -1,12 +1,13 @@
-import { newGame, dispatch, serialize, deserialize, hasDoor, isBlocked,
-  getSoul, WIDTH, HEIGHT } from './core.js';
+import { newGame, dispatch, serialize, deserialize, isBlocked,
+  activeCivicSites, townNpcs, epilogue, WIDTH, HEIGHT } from './core.js';
+import { CIVIC_PROJECTS, CIVIC_LOTS, TOWN_HOMES } from './civic.js';
 
 const el = id => document.getElementById(id);
 const canvas = el('screen'), ctx = canvas.getContext('2d');
 const mini = el('minimap'), mc = mini.getContext('2d');
 const SIZE = 32;
 const glyphs = ['≈', '✿', '▥', '◈', '♣', '♫'];
-const sites = [[3, 3], [10, 3], [17, 3], [3, 9], [10, 9], [17, 9]];
+
 const floors = [
   { base: '#30453d', tile: '#3b5447', dark: '#1e3531', edge: '#59755b', accent: '#96be89' },
   { base: '#3d4441', tile: '#51574b', dark: '#2b3434', edge: '#697260', accent: '#d9c48d' },
@@ -58,6 +59,9 @@ function drawDoor(room, door, palette) {
   }
   if (door.needs && !game.rescued.includes(door.needs)) {
     text(x * SIZE + 16, y * SIZE + 22, '◆', '#fbd392', 17, 'center');
+  } else if (door.origin) {
+    const color = door.origin === 'canal' ? '#8fd1dd' : '#f0bd7c';
+    text(x * SIZE + 16, y * SIZE + 22, '✦', color, 17, 'center');
   }
 }
 function drawLair(room, status, palette) {
@@ -71,6 +75,46 @@ function drawLair(room, status, palette) {
     rect(x - 2, y - 19, 4, 4, '#f6e9a8');
     text(x, y + 31, room.soulId ? 'SOUL LAIR' : 'SEALED LAIR', '#ede2bb', 8, 'center');
   }
+}
+function drawCivicSite(site) {
+  const px = site.x * SIZE, py = site.y * SIZE;
+  const palette = {
+    canal: ['#4b8796', '#c3e8da', '≈'],
+    spring: ['#5da58a', '#e8f1bb', '✿'],
+    forge: ['#bd7248', '#ffe0a0', '✦'],
+    archive: ['#8372ae', '#e4d6fa', '◈'],
+    grove: ['#5a9b6b', '#d9e8a5', '♣'],
+    resonator: ['#c9a55c', '#fae4a5', '♫'],
+  }[site.kind];
+  rect(px + 3, py + 3, 26, 26, '#132c31');
+  rect(px + 5, py + 5, 22, 22, site.used ? '#4f6564' : palette[0]);
+  rect(px + 8, py + 8, 16, 16, '#273d44');
+  text(px + 16, py + 23, palette[2], site.used ? '#91a2a0' : palette[1], 17, 'center');
+  if (!site.used && Math.floor(frames / 20) % 2 === 0) {
+    rect(px + 1, py + 14, 3, 4, palette[1]);
+    rect(px + 28, py + 14, 3, 4, palette[1]);
+  }
+}
+function drawCivicLot(branch) {
+  const [cx, cy] = CIVIC_LOTS[branch.key];
+  const px = cx * SIZE, py = cy * SIZE;
+  const color = branch.kind === 'canal' ? '#6cabbc' : branch.kind === 'spring' ? '#a6c28a' :
+    branch.kind === 'forge' ? '#dd9561' : branch.kind === 'archive' ? '#a99bcb' :
+      branch.kind === 'grove' ? '#8cbb76' : '#e3c780';
+  rect(px - 25, py - 22, 80, 78, '#334b4b');
+  rect(px - 21, py - 18, 72, 70, color);
+  rect(px - 14, py - 11, 58, 56, '#274446');
+  const glyph = {canal:'≈',spring:'✿',forge:'▥',archive:'◈',grove:'♣',resonator:'♫'}[branch.kind];
+  text(px + 15, py + 26, glyph, color, 30, 'center');
+  text(px + 16, py + 45, branch.name.toUpperCase(), '#faedcf', 7, 'center');
+}
+function drawVillager(npc) {
+  const px = npc.x * SIZE, py = npc.y * SIZE;
+  rect(px + 8, py + 18, 16, 13, '#233b3b');
+  rect(px + 11, py + 14, 10, 13, '#89ba9e');
+  rect(px + 12, py + 7, 8, 9, '#f4bc8e');
+  rect(px + 11, py + 5, 10, 5, '#65505b');
+  text(px + 16, py + 5, npc.name.toUpperCase(), '#ffecc6', 9, 'center');
 }
 function drawEnemy(enemy) {
   const px = enemy.x * SIZE, py = enemy.y * SIZE;
@@ -118,6 +162,7 @@ function drawDungeon() {
     const [x, y] = key.split(',').map(Number); rock(x, y, palette);
   }
   for (const door of room.doors) drawDoor(room, door, palette);
+  for (const site of activeCivicSites(game, room.id)) drawCivicSite(site);
   drawLair(room, game.roomStates[room.id], palette);
   for (const enemy of game.roomStates[room.id].enemies) drawEnemy(enemy);
   drawHero(game.hero.x, game.hero.y, game.hero.face);
@@ -151,8 +196,18 @@ function drawTown() {
   for (let y = 0; y < HEIGHT; y++) rect(10 * SIZE + 8, y * SIZE, 15, SIZE, '#637365');
   rect(9 * SIZE + 11, 6 * SIZE - 2, 58, 44, '#253b43');
   rect(9 * SIZE + 17, 6 * SIZE + 5, 44, 30, restored ? '#72a5a5' : '#425d65');
-  for (let i = 0; i < sites.length; i++) {
-    const [x, y] = sites[i], free = game.rescued.includes(game.world.souls[i].id);
+  if (game.accord) {
+    const tint = game.accord.from === 'waterside' ? '#83bdc2' :
+      game.accord.from === 'memory' ? '#e1ab82' : '#a4cc90';
+    rect(10 * SIZE - 41, 6 * SIZE - 18, 83, 69, '#152d32');
+    rect(10 * SIZE - 35, 6 * SIZE - 11, 71, 55, tint);
+    rect(10 * SIZE - 30, 6 * SIZE - 4, 61, 40, '#355553');
+    text(10 * SIZE, 6 * SIZE + 17, '✣', tint, 25, 'center');
+    text(10 * SIZE, 6 * SIZE + 31, 'COUNCIL', '#ffedd2', 9, 'center');
+  }
+  for (let i = 0; i < TOWN_HOMES.length; i++) {
+    const [x, y] = TOWN_HOMES[i],
+      free = game.rescued.includes(game.world.souls[i].id);
     const cx = x * SIZE + 16, cy = y * SIZE + 16;
     const left = cx - 38, top = cy - 28;
     rect(left, top + 12, 76, 44, free ? '#a2a07d' : '#586059');
@@ -164,11 +219,10 @@ function drawTown() {
     text(cx, cy - 10, free ? glyphs[i] : '·', free ? '#ffe0a1' : '#9ba399', 16, 'center');
     text(cx, top + 70, free ? game.world.souls[i].title.toUpperCase() : 'FORGOTTEN',
       free ? '#f9e0b3' : '#91a096', 10, 'center');
-    if (free) {
-      rect(cx - 3, cy + 16, 7, 8, '#d9a685');
-      rect(cx - 5, cy + 11, 10, 6, '#a6c7ad');
-    }
+
   }
+  for (const branch of game.branches) drawCivicLot(branch);
+  for (const npc of townNpcs(game)) drawVillager(npc);
   drawHero(game.home.x, game.home.y, 'up', false);
   text(13, 20, game.world.settlement.toUpperCase(), '#fff0c4', 12);
   text(13, HEIGHT * SIZE - 11, `${restored} RESTORED / 6`, '#ffe3b9', 12);
@@ -185,7 +239,8 @@ function minimap() {
       const tx = ox + target.x * gapX + box / 2, ty = oy + target.y * gapY + box / 2;
       mc.beginPath(); mc.moveTo(cx, cy);mc.lineTo(tx, ty);
       mc.lineWidth = 6;
-      mc.strokeStyle = door.needs && !game.rescued.includes(door.needs) ? '#b28b51' : '#577b68';
+      mc.strokeStyle = door.needs && !game.rescued.includes(door.needs) ? '#b28b51' :
+        door.origin === 'canal' ? '#7fcce2' : door.origin === 'forge' ? '#eeb87b' : '#577b68';
       mc.stroke();
     }
   }
@@ -213,15 +268,36 @@ function updatePanel() {
   el('state-indicator').textContent = game.status === 'won' ? `RESTORED · ${game.finalScore} PTS` :
     game.status === 'lost' ? 'THE TORCH IS OUT' : game.mode === 'town' ? 'SANCTUARY' : 'TORCH LIT';
   el('health').textContent = '♥'.repeat(game.hero.hp) + '♡'.repeat(game.hero.maxHp - game.hero.hp);
-  el('stats').textContent = `TURN ${game.turns} · SHADOWS ${game.kills} · RESTS ${game.rests}`;
+  el('stats').textContent = `TURN ${game.turns} · SHADOWS ${game.kills} · RESTS ${game.rests}` +
+    (game.hero.focus ? ` · FOCUS ${game.hero.focus}` : '') +
+    (game.hero.ward ? ` · WARD ${game.hero.ward}` : '');
   el('soul-counter').textContent = `${game.rescued.length} / 6`;
   el('soul-list').innerHTML = game.world.souls.map((soul, i) => {
     const free = game.rescued.includes(soul.id);
-    return `<div class="soul ${free ? 'free' : ''}"><span class="symbol">${glyphs[i]}</span><span><strong>${free ? soul.name + ' · ' + soul.title : 'Unknown soul · ' + soul.title}</strong><small>${free ? soul.site + ' restored' : 'Awaiting release'}</small></span></div>`;
+    const order = game.rescued.indexOf(soul.id);
+    return `<div class="soul ${free ? 'free' : ''}"><span class="symbol">${free ? order + 1 : glyphs[i]}</span><span><strong>${free ? soul.name + ' · ' + soul.title : 'Unknown soul · ' + soul.title}</strong><small>${free ? 'Rescue #' + (order + 1) + ' · ' + soul.site : 'Awaiting release'}</small></span></div>`;
   }).join('');
-  el('branches').innerHTML = game.branches.length ?
-    `<div class="branch-title">THE VILLAGE BECOMES</div>` +
-    game.branches.map(b => `<div class="branch-item">✧ ${b.name}</div>`).join('') : '';
+  el('branches').innerHTML = (game.branches.length ?
+    `<div class="branch-title">RESTORATION CONSEQUENCES</div>` + game.branches.map(b => {
+      const project = CIVIC_PROJECTS.find(p => p.key === b.key);
+      const second = b.first === project.a ? project.b : project.a;
+      const route = b.passage ? `New route: chambers ${b.passage[0] + 1} ↔ ${b.passage[1] + 1}.` :
+        `${b.terrainCleared.length} stones cleared in chamber ${b.site.room + 1}.`;
+      const used = game.usedSites.includes(b.key);
+      return `<div class="branch-item"><b>✧ ${b.name}</b><small>${b.first} → ${second}</small>` +
+        `<small>${route} ${used ? 'Shrine visited.' : 'Discover its dungeon shrine.'}</small></div>`;
+    }).join('') : '') + (game.accord ?
+    `<div class="accord-banner"><b>FOUNDING ACCORD · ${game.accord.name}</b>` +
+    `<small>${game.accord.firstProject} → ${game.accord.secondProject}</small>` +
+    `<small>${game.accord.gift} · Council activity established</small></div>` : '');
+  el('chronicle').innerHTML = game.events.filter(e => ['restoration','branch','site','passage','accord'].includes(e.type))
+    .slice(-8).reverse().map(e => {
+      if (e.type === 'restoration') return `<p>✧ ${e.name} restored ${e.site}.</p>`;
+      if (e.type === 'branch') return `<p>◈ ${e.name} emerged through rescue order.</p>`;
+      if (e.type === 'accord') return `<p>✣ ${e.name}: ${e.gift}.</p>`;
+      if (e.type === 'passage') return `<p>↔ New passage: chambers ${e.between[0]+1} and ${e.between[1]+1}.</p>`;
+      return `<p>✦ ${e.kind} shrine awakened.</p>`;
+    }).join('') || '<p>Every released soul writes a new chapter.</p>';
   el('journal').innerHTML = game.log.map(line => `<p>${line.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')}</p>`).join('');
   minimap();
 }
@@ -245,9 +321,12 @@ function draw() {
   if (game.status !== 'playing') {
     rect(90, 132, 460, 136, '#10252be8');
     ctx.strokeStyle = '#d9b876';ctx.lineWidth = 3;ctx.strokeRect(90, 132, 460, 136);
-    text(320, 179, game.status === 'won' ? 'THE WORLD RETURNS' : 'THE TORCH IS DARK', '#fae0a2', 21, 'center');
+    const ending = game.epilogue || epilogue(game);
+    text(320, 179, game.status === 'won' ? (ending?.title || 'THE WORLD RETURNS').toUpperCase() :
+      'THE TORCH IS DARK', '#fae0a2', ending ? 15 : 21, 'center');
     text(320, 213, game.status === 'won' ? `SCORE ${game.finalScore} · ${game.turns} TURNS` : 'YOUR STORY ENDS HERE', '#cce2c5', 13, 'center');
-    text(320, 244, 'ENTER A NEW SEED AND IGNITE AGAIN', '#98bdac', 11, 'center');
+    text(320, 244, game.status === 'won' ? `FOUNDING ACCORD: ${ending?.accord || 'THE RETURNED'}` :
+      'ENTER A NEW SEED AND IGNITE AGAIN', '#98bdac', 11, 'center');
   }
   requestAnimationFrame(draw);
 }
@@ -275,12 +354,12 @@ function ignite() {
 el('new-game').addEventListener('click', ignite);
 el('seed').addEventListener('keydown', event => { if (event.key === 'Enter') ignite(); });
 el('save').addEventListener('click', () => {
-  try { localStorage.setItem('soul-torch-v1', serialize(game));showTemporary('RUN SAVED IN THIS BROWSER'); }
+  try { localStorage.setItem('soul-torch-v2', serialize(game));showTemporary('RUN SAVED IN THIS BROWSER'); }
   catch { showTemporary('BROWSER STORAGE UNAVAILABLE'); }
 });
 el('load').addEventListener('click', () => {
   try {
-    const data = localStorage.getItem('soul-torch-v1');
+    const data = localStorage.getItem('soul-torch-v2');
     if (!data) { showTemporary('NO SAVED RUN FOUND');return; }
     game = deserialize(data);el('seed').value = game.seed;updatePanel();showTemporary('RUN RESTORED');
   } catch { showTemporary('COULD NOT RESTORE SAVE'); }

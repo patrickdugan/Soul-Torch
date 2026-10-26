@@ -141,7 +141,7 @@ test('invalid actions fail closed, completed runs stay immutable', () => {
   const game = newGame('invalid-actions');
   assert.throws(() => dispatch(game, { type: 'unknown' }), /Unknown action/);
   assert.throws(() => dispatch(game, { type: 'move', direction: 'northwest' }), /Invalid direction/);
-  assert.throws(() => deserialize('{"version":2,"seed":"1","history":[]}'), /Invalid/);
+  assert.throws(() => deserialize('{"version":999,"seed":"1","history":[]}'), /Invalid/);
   const finished = structuredClone(game); finished.status = 'lost';
   assert.equal(dispatch(finished, { type: 'move', direction: 'down' }), finished);
 });
