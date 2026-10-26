@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101b20">
+  <title>Soul Torch | A World Reborn</title>
+  <link rel="stylesheet" href="./src/style.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="masthead">
+      <div>
+        <div class="eyebrow">A PROCEDURAL WORLD RESTORATION ROGUELIKE</div>
+        <h1>SOUL <span>TORCH</span></h1>
+        <p>Every soul you free changes the world that waits for you.</p>
+      </div>
+      <div class="seedbox">
+        <label for="seed">WORLD SEED</label>
+        <div class="seedline"><input id="seed" value="104729" maxlength="50" aria-label="World seed">
+          <button id="new-game" type="button">Ignite</button></div>
+      </div>
+    </header>
+    <section class="playfield">
+      <div class="stage-col">
+        <div class="stage-header"><span id="location">CHAMBER 01 / THE LOWLANDS</span><span id="state-indicator">TORCH LIT</span></div>
+        <canvas id="screen" width="640" height="416" aria-label="Soul Torch 2D playable game area"></canvas>
+        <div class="statusbar"><span id="health">♥♥♥♥♥♥♥♥</span><span id="stats">TURN 0 · SHADOWS 0</span></div>
+        <div class="controls">
+          <button data-action="move" data-direction="up" title="Move up">↑</button>
+          <button data-action="move" data-direction="left" title="Move left">←</button>
+          <button data-action="move" data-direction="down" title="Move down">↓</button>
+          <button data-action="move" data-direction="right" title="Move right">→</button>
+          <button data-action="attack" title="Strike with the torchblade (Space)">⚔ STRIKE</button>
+          <button data-action="interact" title="Free the soul or talk (E)">✧ RELEASE / TALK</button>
+          <button data-action="toggleTown" title="Travel between the village and dungeon (T)">⌂ VILLAGE / DEPTHS</button>
+          <button data-action="rest" title="Rest in the village (R)">☽ REST</button>
+        </div>
+        <p class="keyguide">WASD / ARROWS move &nbsp; · &nbsp; SPACE strike &nbsp; · &nbsp; E interact &nbsp; · &nbsp; T town &nbsp; · &nbsp; R rest</p>
+      </div>
+      <aside class="sidebar">
+        <section class="panel"><h2>THE UNDERWORLD <span>12 CHAMBERS</span></h2>
+          <canvas id="minimap" width="240" height="236" aria-label="Dungeon map"></canvas>
+          <div class="legend"><span><i class="key path"></i> Explored</span><span><i class="key lock"></i> Sealed</span><span><i class="key hero"></i> You</span></div>
+        </section>
+        <section class="panel"><h2>THE RETURNED <span id="soul-counter">0 / 6</span></h2>
+          <div id="soul-list" class="soul-list"></div><div id="branches" class="branches"></div>
+        </section>
+        <section class="panel journal"><h2>THE JOURNAL <span>MEMORIES</span></h2><div id="journal" role="log" aria-live="polite"></div></section>
+        <section class="savebar"><button id="save" type="button">SAVE RUN</button><button id="load" type="button">LOAD RUN</button></section>
+      </aside>
+    </section>
+    <footer>SOUL TORCH · PLAYABLE PROTOTYPE v0.1 · All graphics drawn procedurally · Runs locally in your browser</footer>
+  </main>
+  <script type="module" src="./src/view.js"></script>
+</body>
+</html>
