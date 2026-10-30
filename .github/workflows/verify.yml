@@ -13,3 +13,7 @@ jobs:
       - run: npm test
       - run: npm run soak -- 10000
       - run: npm run autoplay -- 50
+      - run: npm run branch-matrix -- 2
+      - run: npm run smoke-view
+      - run: npm run history-matrix -- 1
+      - run: npm run charter-matrix -- 2

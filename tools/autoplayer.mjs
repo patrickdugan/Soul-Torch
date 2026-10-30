@@ -47,9 +47,27 @@ function approach(game, predicate, enemies = []) {
   const hero = game.hero, room = game.world.rooms[hero.room];
   return pathTo(room, hero, predicate, enemies);
 }
-export function botAction(game) {
-  if (game.mode === 'town') return game.hero.hp < game.hero.maxHp ? {type:'rest'} : {type:'toggleTown'};
+function followDoor(game, door) {
+  const hero = game.hero;
+  const destination = door.dir === 'up' ? [10,0] : door.dir === 'down' ? [10,HEIGHT - 1] :
+    door.dir === 'left' ? [0,6] : [WIDTH - 1,6];
+  if (hero.x === destination[0] && hero.y === destination[1]) return {type:'move', direction:door.dir};
+  const path = approach(game, (x,y) => x === destination[0] && y === destination[1]);
+  return path?.length ? {type:'move',direction:path[0]} : {type:'wait'};
+}
+/** Optional priority controls which captive to free first, without bypassing simulation rules. */
+export function botAction(game, priority = null, options = {}) {
+  if (game.mode === 'town') {
+    if (options.charter && game.charter?.stage === 'carried') {
+      const dist = Math.abs(game.home.x - 10) + Math.abs(game.home.y - 6);
+      if (dist <= 1) return {type:'interact'};
+      return {type:'move', direction: game.home.x < 10 ? 'right' :
+        game.home.x > 10 ? 'left' : game.home.y < 6 ? 'down' : 'up'};
+    }
+    return game.hero.hp < game.hero.maxHp ? {type:'rest'} : {type:'toggleTown'};
+  }
   if (game.hero.hp <= 3 && game.hero.maxHp > 3) return {type:'toggleTown'};
+  if (options.charter && game.charter?.stage === 'carried') return {type:'toggleTown'};
   const hero = game.hero, room = game.world.rooms[hero.room], state = game.roomStates[hero.room];
   if (state.enemies.length) {
     const touching = state.enemies.find(e => Math.abs(hero.x - e.x) + Math.abs(hero.y - e.y) === 1);
@@ -63,6 +81,29 @@ export function botAction(game) {
     if (path?.length) return {type:'move', direction:path[0]};
     return {type:'wait'};
   }
+  // Once an accord is formed, the optional charter run deliberately takes
+  // precedence over freeing the next soul. The reference agent plays through
+  // the dungeon, retrieves the document, and brings it back to the council.
+  if (options.charter && game.charter?.stage === 'seeking') {
+    const site = game.charter;
+    if (hero.room !== site.room) {
+      const route = routeRooms(game, hero.room, id => id === site.room);
+      if (route?.length) return followDoor(game, route[0]);
+    } else {
+      const dist = Math.abs(hero.x-site.x) + Math.abs(hero.y-site.y);
+      if (dist <= 1) return {type:'interact'};
+      const path = approach(game, (x,y) => Math.abs(x-site.x) + Math.abs(y-site.y) <= 1);
+      return path?.length ? {type:'move',direction:path[0]} : {type:'wait'};
+    }
+  }
+  // Travel through cleared or uncleared rooms to honor a requested rescue order.
+  // Enemies are defeated en route, but a non-target lair can remain sealed.
+  const target = priority?.find(soul => !game.rescued.includes(soul) &&
+    routeRooms(game, hero.room, id => game.world.rooms[id].soulId === soul) !== null);
+  if (target && room.soulId !== target) {
+    const toTarget = routeRooms(game, hero.room, id => game.world.rooms[id].soulId === target);
+    if (toTarget?.length) return followDoor(game, toTarget[0]);
+  }
   if (!state.settled) {
     const near = Math.abs(hero.x - 10) + Math.abs(hero.y - 4) <= 2;
     if (near) return {type:'interact'};
@@ -71,22 +112,22 @@ export function botAction(game) {
   }
   const route = routeRooms(game, hero.room, id => !game.roomStates[id].settled);
   if (!route || route.length === 0) return {type:'wait'};
-  const door = route[0], destination = door.dir === 'up' ? [10,0] : door.dir === 'down' ? [10,HEIGHT - 1] :
-    door.dir === 'left' ? [0,6] : [WIDTH - 1,6];
-  if (hero.x === destination[0] && hero.y === destination[1]) return {type:'move', direction:door.dir};
-  const path = approach(game, (x,y) => x === destination[0] && y === destination[1]);
-  return path?.length ? {type:'move',direction:path[0]} : {type:'wait'};
+  return followDoor(game, route[0]);
 }
-export function playSeed(seed, limit = 15000) {
+export function playSeed(seed, limit = 15000, priority = null, options = {}) {
   let game = newGame(seed);
   for (let i = 0; i < limit && game.status === 'playing'; i++) {
-    const next = botAction(game);
+    const next = botAction(game, priority, options);
     game = dispatch(game, next);
   }
   return { seed, status: game.status, turns: game.turns, kills: game.kills,
     rests: game.rests, rooms: game.roomStates.filter(s=>s.settled).length,
     rescued: game.rescued.length, score: game.finalScore,
-    actions: game.history.length, lastLog: game.log[0] };
+    actions: game.history.length, lastLog: game.log[0],
+    ending: game.epilogue?.key, historyKey: game.epilogue?.historyKey,
+    accord: game.accord?.order, charter: game.charter?.stage || null,
+    infrastructure: game.charter?.infrastructure?.kind || null,
+    branches: game.branches.map(b=>[b.key,b.first]) };
 }
 const invoked = process.argv[1]?.endsWith('autoplayer.mjs');
 if (invoked) {

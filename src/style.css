@@ -42,3 +42,20 @@ footer {text-align:center;color:#60776f;font-size:10px;margin-top:26px}
 @media(max-width:550px){.shell{padding:14px 10px}.masthead{display:block}.seedbox{margin-top:20px}.sidebar{grid-template-columns:1fr}.controls button{flex:1 0 22%}.controls button:nth-child(n+5){flex:1 0 43%}footer{line-height:1.5}}
 
 .branches {margin-top:10px;color:#e2ce97;font:11px monospace;line-height:1.8}.branch-title{color:#94afa6;font-size:10px;border-top:1px solid #425a56;padding-top:7px;margin-bottom:3px}.branch-item{padding-left:6px}
+
+/* Persistent civic projects and rescue-order chronicle. */
+.branch-item {margin:6px 0;padding:7px 9px;border:1px solid #4d645b;background:#183029;line-height:1.5}
+.branch-item b {display:block;color:#f3d595;font-weight:normal}
+.branch-item small {display:block;color:#acc8b6;font:10px/1.6 ui-monospace,Consolas,monospace}
+.chronicle {font:11px/1.6 ui-monospace,Consolas,monospace;color:#b8caba;max-height:200px;overflow:auto}
+.chronicle p {margin:0 0 7px;padding-bottom:6px;border-bottom:1px solid #344b45}
+.chronicle p:first-child {color:#f2dca5}
+
+.accord-banner {margin-top:10px;padding:9px;border:1px solid #ab986b;background:#3b3428}
+.accord-banner b {display:block;font-weight:normal;color:#f9d891}
+.accord-banner small {display:block;font:10px/1.6 ui-monospace,Consolas,monospace;color:#e1d5b2}
+
+/* The optional civic charter is a visible post-accord objective. */
+.charter-banner {margin-top:9px;padding:9px;border:1px solid #83a3a3;background:#223b40}
+.charter-banner b {display:block;color:#f3ddaa;font-weight:normal}
+.charter-banner small {display:block;font:10px/1.6 ui-monospace,Consolas,monospace;color:#bed3cb}
